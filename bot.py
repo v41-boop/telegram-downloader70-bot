@@ -1,30 +1,29 @@
+import os
+import yt_dlp
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 BOT_TOKEN = "8440895412:AAGoiWXxyKreGgHpBKMY9lJXptMAmV78_hg"
-CHANNEL_USERNAME = "@ossae"  # قناتك للتحقق من الاشتراك
+CHANNEL_USERNAME = "@ossae"
 
+# ================== تحقق الاشتراك ==================
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     try:
         member = await context.bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        if member.status in ["member", "administrator", "creator"]:
-            return True
-        else:
-            return False
+        return member.status in ["member", "administrator", "creator"]
     except:
         return False
 
+# ================== استقبال الرابط ==================
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    is_subscribed = await check_subscription(update, context)
-
-    if not is_subscribed:
+    if not await check_subscription(update, context):
         keyboard = [
-            [InlineKeyboardButton("📢 اشترك بالقناة أولاً", url=f"https://t.me/{CHANNEL_USERNAME.replace('@','')}")],
+            [InlineKeyboardButton("📢 اشترك بالقناة", url="https://t.me/ossae")],
             [InlineKeyboardButton("🔄 تحقق من الاشتراك", callback_data="check_sub")]
         ]
         await update.message.reply_text(
-            "❌ لازم تشترك بالقناة قبل استخدام البوت",
+            "❌ لازم تشترك بالقناة أولاً",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
@@ -38,30 +37,74 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🎵 صوت", callback_data="audio"),
         ]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("اختر نوع التحميل:", reply_markup=reply_markup)
 
+    await update.message.reply_text(
+        "اختر نوع التحميل:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+# ================== أزرار ==================
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
-    if query.data == "check_sub":
-        subscribed = await check_subscription(update, context)
-        if subscribed:
-            await query.edit_message_text("✅ تم التحقق، يمكنك الآن إرسال رابط لتحميله!")
-        else:
-            await query.edit_message_text(
-                "❌ لم يتم الاشتراك بعد! اشترك بالقناة أولاً.",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📢 اشترك بالقناة", url=f"https://t.me/{CHANNEL_USERNAME.replace('@','')}")],
-                    [InlineKeyboardButton("🔄 تحقق من الاشتراك", callback_data="check_sub")]
-                ])
-            )
-    elif query.data == "video":
-        await query.edit_message_text(f"⏳ جاري تحميل الفيديو من الرابط: {context.user_data.get('url')}")
-    elif query.data == "audio":
-        await query.edit_message_text(f"⏳ جاري تحميل الصوت من الرابط: {context.user_data.get('url')}")
 
+    if query.data == "check_sub":
+        if await check_subscription(update, context):
+            await query.edit_message_text("✅ تم التحقق، أرسل رابط الآن.")
+        else:
+            keyboard = [
+                [InlineKeyboardButton("📢 اشترك بالقناة", url="https://t.me/ossae")],
+                [InlineKeyboardButton("🔄 تحقق من الاشتراك", callback_data="check_sub")]
+            ]
+            await query.edit_message_text(
+                "❌ لم يتم الاشتراك بعد!",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        return
+
+    url = context.user_data.get("url")
+    if not url:
+        await query.edit_message_text("❌ أرسل رابط أولاً.")
+        return
+
+    await query.edit_message_text("⏳ جاري التحميل...")
+
+    try:
+        ydl_opts = {
+            "format": "best",
+            "outtmpl": "video.%(ext)s",
+            "quiet": True,
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0"
+            }
+        }
+
+        if query.data == "audio":
+            ydl_opts["format"] = "bestaudio"
+            ydl_opts["postprocessors"] = [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }]
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+
+            if query.data == "audio":
+                filename = filename.rsplit(".", 1)[0] + ".mp3"
+
+        if query.data == "video":
+            await query.message.reply_video(video=open(filename, "rb"))
+        else:
+            await query.message.reply_audio(audio=open(filename, "rb"))
+
+        os.remove(filename)
+
+    except Exception as e:
+        await query.message.reply_text(f"❌ حدث خطأ:\n{e}")
+
+# ================== تشغيل البوت ==================
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
