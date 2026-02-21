@@ -2,7 +2,7 @@ from telegram.ext import ApplicationBuilder, MessageHandler, filters
 import yt_dlp
 
 # 🔹 التوكن مضمن مباشرة
-BOT_TOKEN = "8440895412:AAHASqywVBlmyyoOhNtQMU2b8OUXI5bTPpc"
+BOT_TOKEN = "8440895412:AAGoiWXxyKreGgHpBKMY9lJXptMAmV78_hg"
 
 # دالة تحميل الفيديوهات
 async def download_video(update, context):
