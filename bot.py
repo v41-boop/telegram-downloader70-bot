@@ -1,7 +1,7 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-BOT_TOKEN = "8440895412:AAHASqywVBlmyyoOhNtQMU2b8OUXI5bTPpc"
+BOT_TOKEN = "8440895412:AAGoiWXxyKreGgHpBKMY9lJXptMAmV78_hg"
 CHANNEL_USERNAME = "@ossae"  # قناتك للتحقق من الاشتراك
 
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
