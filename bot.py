@@ -3,7 +3,7 @@ import yt_dlp
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
 
-TOKEN = "PUT_YOUR_NEW_TOKEN_HERE"
+TOKEN = "8440895412:AAGoiWXxyKreGgHpBKMY9lJXptMAmV78_hg"
 CHANNEL_USERNAME = "@ossae"
 
 bot = telebot.TeleBot(TOKEN)
