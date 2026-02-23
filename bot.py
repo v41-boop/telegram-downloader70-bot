@@ -1,8 +1,6 @@
 import os
-import logging
 import uuid
-import asyncio
-from flask import Flask, request
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -14,14 +12,12 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# ================== إعدادات ==================
+# ================== الإعدادات ==================
 TOKEN = os.getenv("TOKEN")
 CHANNEL_USERNAME = "@ossae"
-WEBHOOK_URL = os.getenv("RAILWAY_STATIC_URL")
 
 logging.basicConfig(level=logging.INFO)
 
-app = Flask(__name__)
 telegram_app = Application.builder().token(TOKEN).build()
 
 
@@ -115,12 +111,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if mode == "video":
             await query.message.reply_video(video=open(filename, "rb"))
+            os.remove(filename)
         else:
             mp3_file = f"{file_id}.mp3"
             await query.message.reply_audio(audio=open(mp3_file, "rb"))
-            filename = mp3_file
-
-        os.remove(filename)
+            os.remove(mp3_file)
 
     except Exception as e:
         await query.message.reply_text("❌ حدث خطأ أثناء التحميل")
@@ -132,19 +127,6 @@ telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_
 telegram_app.add_handler(CallbackQueryHandler(button_handler))
 
 
-# ================== Webhook ==================
-@app.route("/", methods=["POST"])
-async def webhook():
-    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
-    await telegram_app.process_update(update)
-    return "ok"
-
-
-async def main():
-    await telegram_app.initialize()
-    await telegram_app.bot.set_webhook(f"{WEBHOOK_URL}/")
-
-
+# ================== تشغيل البوت (Polling) ==================
 if __name__ == "__main__":
-    asyncio.run(main())
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    telegram_app.run_polling()
