@@ -1,5 +1,7 @@
 import os
 import logging
+import uuid
+import asyncio
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -12,10 +14,10 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# 🔴 حط توكنك هنا بدل YOUR_TOKEN
-TOKEN = "8440895412:AAGoiWXxyKreGgHpBKMY9lJXptMAmV78_hg"
-
+# ================== إعدادات ==================
+TOKEN = os.getenv("TOKEN")
 CHANNEL_USERNAME = "@ossae"
+WEBHOOK_URL = os.getenv("RAILWAY_STATIC_URL")
 
 logging.basicConfig(level=logging.INFO)
 
@@ -23,7 +25,7 @@ app = Flask(__name__)
 telegram_app = Application.builder().token(TOKEN).build()
 
 
-# التحقق من الاشتراك الاجباري
+# ================== تحقق الاشتراك ==================
 async def check_subscription(user_id):
     try:
         member = await telegram_app.bot.get_chat_member(CHANNEL_USERNAME, user_id)
@@ -32,7 +34,7 @@ async def check_subscription(user_id):
         return False
 
 
-# start
+# ================== /start ==================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
@@ -49,7 +51,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📥 ارسل رابط الفيديو")
 
 
-# استقبال الرابط
+# ================== استقبال الرابط ==================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
@@ -63,12 +65,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    url = update.message.text
+    url = update.message.text.strip()
 
     keyboard = [
         [
-            InlineKeyboardButton("🎥 تحميل فيديو", callback_data=f"video|{url}"),
-            InlineKeyboardButton("🎵 تحميل صوت MP3", callback_data=f"audio|{url}"),
+            InlineKeyboardButton("🎥 فيديو", callback_data=f"video|{url}"),
+            InlineKeyboardButton("🎵 صوت MP3", callback_data=f"audio|{url}"),
         ]
     ]
 
@@ -78,24 +80,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# معالجة الأزرار
+# ================== معالجة الأزرار ==================
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     mode, url = query.data.split("|")
-
     await query.message.reply_text("⏳ جاري التحميل...")
+
+    file_id = str(uuid.uuid4())
 
     if mode == "video":
         ydl_opts = {
-            "format": "best[ext=mp4]",
-            "outtmpl": "video.%(ext)s",
+            "format": "best",
+            "outtmpl": f"{file_id}.%(ext)s",
         }
     else:
         ydl_opts = {
             "format": "bestaudio/best",
-            "outtmpl": "audio.%(ext)s",
+            "outtmpl": f"{file_id}.%(ext)s",
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
@@ -105,22 +108,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
         }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
 
-    if mode == "video":
-        await query.message.reply_video(video=open("video.mp4", "rb"))
-        os.remove("video.mp4")
-    else:
-        await query.message.reply_audio(audio=open("audio.mp3", "rb"))
-        os.remove("audio.mp3")
+        if mode == "video":
+            await query.message.reply_video(video=open(filename, "rb"))
+        else:
+            mp3_file = f"{file_id}.mp3"
+            await query.message.reply_audio(audio=open(mp3_file, "rb"))
+            filename = mp3_file
+
+        os.remove(filename)
+
+    except Exception as e:
+        await query.message.reply_text("❌ حدث خطأ أثناء التحميل")
 
 
+# ================== إضافة الهاندلرات ==================
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 telegram_app.add_handler(CallbackQueryHandler(button_handler))
 
 
+# ================== Webhook ==================
 @app.route("/", methods=["POST"])
 async def webhook():
     update = Update.de_json(request.get_json(force=True), telegram_app.bot)
@@ -128,7 +140,11 @@ async def webhook():
     return "ok"
 
 
+async def main():
+    await telegram_app.initialize()
+    await telegram_app.bot.set_webhook(f"{WEBHOOK_URL}/")
+
+
 if __name__ == "__main__":
-    telegram_app.initialize()
-    telegram_app.bot.set_webhook("https://YOUR_RAILWAY_URL.up.railway.app/")
+    asyncio.run(main())
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
