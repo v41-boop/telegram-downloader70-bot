@@ -1,26 +1,21 @@
 import os
 import uuid
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-    filters,
-)
+from flask import Flask, request
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 import yt_dlp
-import asyncio
 
 # ================== الإعدادات ==================
 TOKEN = os.getenv("TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # ضع رابط مشروعك في Railway هنا
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # مثال: https://yourproject.up.railway.app
 CHANNEL_USERNAME = "@ossae"
 
 logging.basicConfig(level=logging.INFO)
 
+bot = Bot(TOKEN)
 telegram_app = Application.builder().token(TOKEN).build()
+app = Flask(__name__)
 
 # ================== تحقق الاشتراك ==================
 async def check_subscription(user_id):
@@ -35,11 +30,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     if not await check_subscription(user.id):
-        keyboard = [[InlineKeyboardButton("اشترك بالقناة", url=f"https://t.me/{CHANNEL_USERNAME.strip('@')}")]]
-        await update.message.reply_text(
-            "⚠️ لازم تشترك بالقناة حتى تستخدم البوت",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
+        keyboard = [[InlineKeyboardButton("اشترك بالقناة", url=f"https://t.me/{CHANNEL_USERNAME[1:]}")]]
+        await update.message.reply_text("⚠️ لازم تشترك بالقناة حتى تستخدم البوت", reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
     await update.message.reply_text("📥 ارسل رابط الفيديو")
@@ -49,21 +41,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     if not await check_subscription(user.id):
-        keyboard = [[InlineKeyboardButton("اشترك بالقناة", url=f"https://t.me/{CHANNEL_USERNAME.strip('@')}")]]
-        await update.message.reply_text(
-            "⚠️ لازم تشترك بالقناة",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
+        keyboard = [[InlineKeyboardButton("اشترك بالقناة", url=f"https://t.me/{CHANNEL_USERNAME[1:]}")]]
+        await update.message.reply_text("⚠️ لازم تشترك بالقناة", reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
     url = update.message.text.strip()
-
     keyboard = [[InlineKeyboardButton("🎥 فيديو", callback_data=f"video|{url}")]]
-
-    await update.message.reply_text(
-        "اختر نوع التحميل:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
+    await update.message.reply_text("اختر نوع التحميل:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # ================== معالجة الأزرار ==================
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -80,14 +64,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
 
     try:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([url]))
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
 
-        # البحث عن الملف بعد التحميل
-        filename = next(
-            (f for f in os.listdir(".") if f.startswith(file_id) and f.endswith((".mp4", ".mkv", ".webm"))),
-            None
-        )
+        filename = next((f for f in os.listdir(".") if f.startswith(file_id) and f.endswith((".mp4", ".mkv", ".webm"))), None)
         if filename:
             await query.message.reply_video(video=open(filename, "rb"))
             os.remove(filename)
@@ -103,12 +83,16 @@ telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 telegram_app.add_handler(CallbackQueryHandler(button_handler))
 
-# ================== تشغيل البوت Webhook ==================
-async def main():
-    await telegram_app.bot.set_webhook(f"{WEBHOOK_URL}/{TOKEN}")
-    logging.info("✅ Webhook set successfully")
-    await telegram_app.start()
-    await telegram_app.idle()
+# ================== Flask Webhook Endpoint ==================
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), bot)
+    telegram_app.update_queue.put(update)
+    return "OK"
 
+# ================== تشغيل Webhook ==================
 if __name__ == "__main__":
-    asyncio.run(main())
+    # تعيين Webhook تلقائياً عند التشغيل
+    bot.set_webhook(f"{WEBHOOK_URL}/{TOKEN}")
+    # تشغيل Flask
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
