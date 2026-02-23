@@ -105,19 +105,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
 
     try:
+        # تحميل الفيديو/الصوت وانتظار التحويل
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
+            ydl.download([url])
 
         if mode == "video":
-            await query.message.reply_video(video=open(filename, "rb"))
-            os.remove(filename)
+            # البحث عن الملف بعد التحميل
+            filename = next(
+                (f for f in os.listdir(".") if f.startswith(file_id) and f.endswith((".mp4", ".mkv", ".webm"))),
+                None
+            )
+            if filename:
+                await query.message.reply_video(video=open(filename, "rb"))
+                os.remove(filename)
+            else:
+                await query.message.reply_text("❌ لم يتم العثور على ملف الفيديو")
         else:
             mp3_file = f"{file_id}.mp3"
-            await query.message.reply_audio(audio=open(mp3_file, "rb"))
-            os.remove(mp3_file)
+            if os.path.exists(mp3_file):
+                await query.message.reply_audio(audio=open(mp3_file, "rb"))
+                os.remove(mp3_file)
+            else:
+                await query.message.reply_text("❌ لم يتم تحويل الصوت بنجاح")
 
     except Exception as e:
+        logging.error(e)
         await query.message.reply_text("❌ حدث خطأ أثناء التحميل")
 
 
