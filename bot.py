@@ -98,7 +98,7 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("⏳ جاري تحميل الفيديو بأعلى جودة...")
 
- ydl_opts = {
+ydl_opts = {
         "format": "bestvideo+bestaudio/best",
         "outtmpl": "video.%(ext)s",
         "merge_output_format": "mp4",
