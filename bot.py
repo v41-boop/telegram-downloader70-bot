@@ -98,12 +98,12 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("⏳ جاري تحميل الفيديو بأعلى جودة...")
 
-    ydl_opts = {
-        "format": "bestvideo+bestaudio/best",
-        "outtmpl": "video.%(ext)s",
-        "merge_output_format": "mp4",
-        "quiet": True,
-    }
+   ydl_opts = {
+    "format": "best[ext=mp4]/best",
+    "outtmpl": "video.%(ext)s",
+    "noplaylist": True,
+    "quiet": True,
+}
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
