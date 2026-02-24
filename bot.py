@@ -2,6 +2,7 @@ import os
 import yt_dlp
 import sqlite3
 from datetime import datetime
+from urllib.parse import urlparse
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -12,19 +13,18 @@ from telegram.ext import (
 )
 
 # ==============================
-# 🔐 ENV VARIABLES CHECK
+# 🔐 ENV VARIABLES
 # ==============================
 
 TOKEN = os.getenv("BOT_TOKEN")
-
 if not TOKEN:
     raise ValueError("❌ BOT_TOKEN NOT FOUND IN RAILWAY VARIABLES")
 
-CHANNEL_USERNAME = "ossae"  # بدون @
-ADMIN_ID = 8059759575       # ايدي حسابك كـ ادمن
+CHANNEL_USERNAME = "ossae"
+ADMIN_ID = 8059759575
 
 # ==============================
-# 🗄 DATABASE SETUP
+# 🗄 DATABASE
 # ==============================
 
 conn = sqlite3.connect("downloads.db", check_same_thread=False)
@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS downloads (
     username TEXT,
     full_name TEXT,
     url TEXT,
+    title TEXT,
+    duration INTEGER,
+    platform TEXT,
     timestamp TEXT
 )
 """)
@@ -53,31 +56,27 @@ async def check_subscription(user_id, context):
             user_id=user_id,
         )
         return member.status in ["member", "administrator", "creator"]
-    except Exception:
+    except:
         return False
 
 # ==============================
-# 🚀 START COMMAND
+# 🚀 START
 # ==============================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
-    is_subscribed = await check_subscription(user.id, context)
-
-    if not is_subscribed:
+    if not await check_subscription(user.id, context):
         await update.message.reply_text(
-            "🔒 لاستخدام البوت يجب الاشتراك بالقناة أولاً:\n"
-            f"https://t.me/{CHANNEL_USERNAME}\n\n"
-            "وبعد الاشتراك اضغط /start مرة ثانية."
+            f"🔒 يجب الاشتراك بالقناة أولاً:\nhttps://t.me/{CHANNEL_USERNAME}"
         )
         return
 
     await update.message.reply_text(
         f"👋 أهلاً {user.first_name}\n\n"
-        "🤖 بوت تحميل الفيديوهات الاحترافي.\n"
-        "📥 أرسل رابط أي فيديو من مواقع التواصل\n"
-        "🎬 وسيتم تنزيله بأعلى جودة متاحة."
+        "🎬 بوت تحميل الفيديوهات الاحترافي\n"
+        "📥 أرسل أي رابط فيديو من أي موقع\n"
+        "⚡ يتم التحميل بأعلى جودة متاحة"
     )
 
 # ==============================
@@ -86,11 +85,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    url = update.message.text
+    url = update.message.text.strip()
 
-    is_subscribed = await check_subscription(user.id, context)
-
-    if not is_subscribed:
+    if not await check_subscription(user.id, context):
         await update.message.reply_text(
             f"🔒 يجب الاشتراك بالقناة أولاً:\nhttps://t.me/{CHANNEL_USERNAME}"
         )
@@ -98,17 +95,23 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("⏳ جاري تحميل الفيديو بأعلى جودة...")
 
-ydl_opts = {
-        "format": "bestvideo+bestaudio/best",
+    ydl_opts = {
+        "format": "bv*+ba/best",
         "outtmpl": "video.%(ext)s",
         "merge_output_format": "mp4",
+        "noplaylist": True,
         "quiet": True,
+        "ignoreerrors": True,
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             file_name = ydl.prepare_filename(info)
+
+        title = info.get("title", "Unknown")
+        duration = info.get("duration", 0)
+        platform = urlparse(url).netloc
 
         await update.message.reply_video(
             video=open(file_name, "rb"),
@@ -120,44 +123,49 @@ ydl_opts = {
         # ==============================
         # SAVE TO DATABASE
         # ==============================
+
         cursor.execute(
-            "INSERT INTO downloads (user_id, username, full_name, url, timestamp) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO downloads (user_id, username, full_name, url, title, duration, platform, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 user.id,
                 user.username,
                 user.full_name,
                 url,
+                title,
+                duration,
+                platform,
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            )
+            ),
         )
         conn.commit()
 
         # ==============================
         # SEND ADMIN NOTIFICATION
         # ==============================
-        try:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"""
+
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"""
 📥 تحميل جديد
 
 👤 الاسم: {user.full_name}
 🆔 ID: {user.id}
+🌍 الموقع: {platform}
+🎬 العنوان: {title}
+⏱ المدة: {duration} ثانية
 🔗 الرابط: {url}
 🕒 الوقت: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 """
-            )
-        except:
-            pass
+        )
 
     except Exception as e:
         await update.message.reply_text(
             "❌ حدث خطأ أثناء التحميل.\n"
-            "تأكد من صحة الرابط أو جرب رابط آخر."
+            "قد يكون الفيديو خاص أو محذوف أو كبير جداً."
         )
 
 # ==============================
-# 📊 STATS COMMAND
+# 📊 STATS
 # ==============================
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -170,7 +178,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"📊 عدد الفيديوهات المحملة: {total}")
 
 # ==============================
-# 🧠 MAIN APP
+# 🧠 MAIN
 # ==============================
 
 def main():
